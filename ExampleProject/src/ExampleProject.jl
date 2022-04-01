@@ -1,24 +1,24 @@
 module ExampleProject
 
-using ChoosyDataLogger
+using ChoosyDataLoggers
 
-ChoosyDataLogger.@init
+ChoosyDataLoggers.@init
 
 function data_macro_test(x)
-    ChoosyDataLogger.@data "Test" x
+    ChoosyDataLoggers.@data "Test" x
 end
 
 
 function data_macro_test_2(y)
-    ChoosyDataLogger.@data "Test" y
+    ChoosyDataLoggers.@data "Test" y
 end
 
 function data_macro_test_3(x)
-    ChoosyDataLogger.@data "Test" x
+    ChoosyDataLoggers.@data "Test" z
 end
 
 function __init__()
-    ChoosyDataLogger.@register_data_logs
+    ChoosyDataLoggers.@register
 end
 
 

@@ -4,4 +4,4 @@ authors = ["Matthew Schlegel <mkschleg@gmail.com>"]
 version = "0.1.0"
 
 [deps]
-ChoosyDataLogger = "edd8e46e-3ca5-477d-bc67-b483295d3b14"
+ChoosyDataLoggers = "edd8e46e-3ca5-477d-bc67-b483295d3b14"

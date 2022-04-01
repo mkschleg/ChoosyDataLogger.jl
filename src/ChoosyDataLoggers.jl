@@ -36,7 +36,7 @@ function proc_exs(group_sym, source, exs, __module__)
                 push!(NamesDict[name], source)
             end
             if isdefined(__module__, ABUSIVE_ARR_NAME)
-                push!(getpropert(__module__, ABUSIVE_ARR_NAME), (group_sym, name, source))
+                push!(getproperty(__module__, ABUSIVE_ARR_NAME), (group_sym, name, source))
             end
         else
             throw("Not a valid expressions for @data")
@@ -57,14 +57,15 @@ macro init()
     mod = __module__
     func_name = :get_data_macro_uses
     func_name_2 = :get_raw_data_macro_uses
+    arr_name = ABUSIVE_ARR_NAME
     init_func = :__init__
     quote
-        const cdl_info_arr = []
+        const $arr_name = []
         function $func_name()
-            ChoosyDataLogger.format_data_groups_and_names(ChoosyDataLogger.DataGroupsAndNames)
+            ChoosyDataLoggers.format_data_groups_and_names(ChoosyDataLoggers.DataGroupsAndNames)
         end
         function $func_name_2()
-            ChoosyDataLogger.DataGroupsAndNames
+            ChoosyDataLoggers.DataGroupsAndNames
         end
     end |> esc
 end
@@ -74,7 +75,7 @@ macro register()
     quote
         if isdefined($mod, ABUSIVE_ARR_NAME)
             for (group_sym, name, source) in getproperty($mod, ABUSIVE_ARR_NAME)
-                NamesDict = get!(Dict{String, Vector{LineNumberNode}}, ChoosyDataLogger.DataGroupsAndNames, group_sym)
+                NamesDict = get!(Dict{String, Vector{LineNumberNode}}, ChoosyDataLoggers.DataGroupsAndNames, group_sym)
                 if name ∉ keys(NamesDict)
                     NamesDict[name] = [source]
                 elseif source ∉ NamesDict[name]
@@ -123,8 +124,8 @@ Arguments:
 function construct_logger(groups_names_and_procs; kwargs...)
     res = Dict{Symbol, Dict{Symbol, AbstractArray}}()
     logger = TeeLogger(
-        ExpUtils.NotDataFilter(current_logger()),
-        (ExpUtils.DataLogger(gn, res; kwargs...) for gn in extra_groups_names_and_procs)...
+        NotDataFilter(current_logger()),
+        (DataLogger(gn, res; kwargs...) for gn in groups_names_and_procs)...
     )
     res, logger
 end
@@ -210,7 +211,7 @@ struct ArrayLogger{V<:Union{Val, Nothing}} <: AbstractLogger
     proc::V
 end
 
-ArrayLogger(data, n=nothing; proc=nothing) = ArrayLogger(data, n, isnothing(proc) ? nothing : Val(proc))
+ArrayLogger(data; proc=nothing, steps=nothing) = ArrayLogger(data, steps, isnothing(proc) ? nothing : Val(proc))
 
 function Logging.handle_message(logger::ArrayLogger, level, message, _module, group, id, file, line; kwargs...)
     group_strg = get!(logger.data, group, Dict{Symbol, AbstractArray}())
