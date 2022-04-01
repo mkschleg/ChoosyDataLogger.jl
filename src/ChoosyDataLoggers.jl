@@ -1,4 +1,4 @@
-module ChoosyDataLogger
+module ChoosyDataLoggers
 
 import LoggingExtras: EarlyFilteredLogger, ActiveFilteredLogger, AbstractLogger, TeeLogger
 import Logging: Logging, @logmsg, Info, handle_message, LogLevel, current_logger
@@ -9,6 +9,8 @@ import Markdown: Markdown, @md_str
 const DataLevel = LogLevel(-93)
 const SPECIAL_NAMES = [:idx]
 const DataGroupsAndNames = Dict{Symbol, Dict{Symbol, Vector{LineNumberNode}}}()
+
+const ABUSIVE_ARR_NAME = :_cdl_info_arr_1938123
 
 function proc_exs(group_sym, source, exs, __module__)
     @nospecialize
@@ -24,8 +26,8 @@ function proc_exs(group_sym, source, exs, __module__)
             elseif source ∉ NamesDict[name]
                 push!(NamesDict[name], source)
             end
-            if isdefined(__module__, :cdl_info_arr)
-                push!(__module__.cdl_info_arr, (group_sym, name, source))
+            if isdefined(__module__, ABUSIVE_ARR_NAME)
+                push!(getproperty(__module__, ABUSIVE_ARR_NAME), (group_sym, name, source))
             end
         elseif @capture(ex, name_) && !contains(string(name), "=") 
             if name ∉ keys(NamesDict)
@@ -33,8 +35,8 @@ function proc_exs(group_sym, source, exs, __module__)
             elseif source ∉ NamesDict[name]
                 push!(NamesDict[name], source)
             end
-            if isdefined(__module__, :cdl_info_arr)
-                push!(__module__.cdl_info_arr, (group_sym, name, source))
+            if isdefined(__module__, ABUSIVE_ARR_NAME)
+                push!(getpropert(__module__, ABUSIVE_ARR_NAME), (group_sym, name, source))
             end
         else
             throw("Not a valid expressions for @data")
@@ -43,11 +45,35 @@ function proc_exs(group_sym, source, exs, __module__)
 
 end
 
-macro register_data_logs()
+macro data(group, exs...)
+    group_str = string(group)
+    proc_exs(Symbol(group_str), __source__, exs, __module__)
+    group_exp = :(_group = Symbol($group_str))
+    :($Logging.@logmsg($DataLevel, "DATA", $(exs...), $group_exp)) |> esc
+end
+
+
+macro init()
+    mod = __module__
+    func_name = :get_data_macro_uses
+    func_name_2 = :get_raw_data_macro_uses
+    init_func = :__init__
+    quote
+        const cdl_info_arr = []
+        function $func_name()
+            ChoosyDataLogger.format_data_groups_and_names(ChoosyDataLogger.DataGroupsAndNames)
+        end
+        function $func_name_2()
+            ChoosyDataLogger.DataGroupsAndNames
+        end
+    end |> esc
+end
+
+macro register()
     mod = __module__
     quote
-        if isdefined($mod, :cdl_info_arr)
-            for (group_sym, name, source) in $mod.cdl_info_arr
+        if isdefined($mod, ABUSIVE_ARR_NAME)
+            for (group_sym, name, source) in getproperty($mod, ABUSIVE_ARR_NAME)
                 NamesDict = get!(Dict{String, Vector{LineNumberNode}}, ChoosyDataLogger.DataGroupsAndNames, group_sym)
                 if name ∉ keys(NamesDict)
                     NamesDict[name] = [source]
@@ -59,20 +85,6 @@ macro register_data_logs()
     end
 end
 
-macro init()
-    mod = __module__
-    func_name = :get_data_macro_uses
-    func_name_2 = :get_raw_data_macro_uses
-    quote
-        const cdl_info_arr = []
-        function $func_name()
-            ChoosyDataLogger.format_data_groups_and_names(ChoosyDataLogger.DataGroupsAndNames)
-        end
-        function $func_name_2()
-            ChoosyDataLogger.DataGroupsAndNames
-        end
-    end |> esc
-end
 
 function format_data_groups_and_names(dnag)
     ks = keys(dnag)
@@ -93,27 +105,49 @@ function format_data_groups_and_names(dnag)
     Markdown.parse(s)
 end
 
-macro data(group, exs...)
-    group_str = string(group)
-    proc_exs(Symbol(group_str), __source__, exs, __module__)
-    group_exp = :(_group = Symbol($group_str))
-    :($Logging.@logmsg($DataLevel, "DATA", $(exs...), $group_exp)) |> esc
-end
+#=
+Data Loging Sinks
+=#
+"""
+    construct_logger
 
-function construct_logger(;steps=nothing, extra_groups_and_names=[])
+Create a logger which tee's the current logger (filtering out data logs).
+
+Arguments:
+- `groups_names_and_procs::Vector` where each element is a valid argument 
+    for a datalogger.
+- `kwargs...`: these are passed to the data loggers.
+
+
+"""
+function construct_logger(groups_names_and_procs; kwargs...)
     res = Dict{Symbol, Dict{Symbol, AbstractArray}}()
     logger = TeeLogger(
         ExpUtils.NotDataFilter(current_logger()),
-        ExpUtils.DataLogger(:EXP, res, steps), # always capture exp
-        (ExpUtils.DataLogger(gn, res) for gn in extra_groups_and_names)...
+        (ExpUtils.DataLogger(gn, res; kwargs...) for gn in extra_groups_names_and_procs)...
     )
     res, logger
 end
 
+"""
+    NotDataFilter
+
+A convenience constructor for baring data logs going through the
+other logging frameworks. Maybe could remove this now that the data
+logger is very low priority?
+"""
 NotDataFilter(logger) = EarlyFilteredLogger(logger) do log_args
     log_args.level != DataLevel
 end
 
+"""
+    DataLogger(args...; kwargs...)
+    DataLogger(group::Symbol, args...; kwargs...)
+    DataLogger((group, name)::Tuple{Symbol, Symbol}, args...; kwargs...)
+    DataLogger((group, name, proc)::Tuple{Symbol, Symbol, Symbol}, args...; kwargs...)
+
+Convenience Functions for making data loggers using array loggers.
+"""
 DataLogger(args...; kwargs...) = EarlyFilteredLogger(ArrayLogger(args...; kwargs...)) do log_args
     log_args.level == DataLevel
 end
@@ -127,15 +161,22 @@ DataLogger((group, name)::Tuple{Symbol, Symbol}, args...; kwargs...) = EarlyFilt
         name ∈ keys(log.kwargs)
     end) do log_args
         log_args.level == DataLevel && log_args.group == group
-end
+    end
 
 DataLogger((group, name, proc)::Tuple{Symbol, Symbol, Symbol}, args...; kwargs...) = EarlyFilteredLogger(
     ActiveFilteredLogger(ArrayLogger(args...; proc=proc, kwargs...)) do log
         name ∈ keys(log.kwargs)
     end) do log_args
         log_args.level == DataLevel && log_args.group == group
-end
+    end
 
+"""
+    DataLogger(group::String, args...; kwargs...)
+    DataLogger(gnp::Vector{<:AbstractString}, args...; kwargs...)
+    DataLogger(gnp::Union{Tuple{String}, Tuple{String, String}, Tuple{String, String, String}}, args...; kwargs...)
+
+Convencience for string arguments.
+"""
 DataLogger(group::String, args...; kwargs...) = DataLogger(Symbol(group), args...; kwargs...)
 
 function DataLogger(gnp::Vector{<:AbstractString}, args...; kwargs...)
@@ -148,11 +189,20 @@ function DataLogger(gnp::Vector{<:AbstractString}, args...; kwargs...)
     else
         @error "Logging extras can only have up-to 3 arguments"
     end
-        
 end
 
+DataLogger(gnp::Union{Tuple{String}, Tuple{String, String}, Tuple{String, String, String}}, args...; kwargs...) =
+    DataLogger(Symbol.(gnp), args...; kwargs...)
+
 """
-    Data Sink
+    ArrayLogger
+
+This is a data sink logger which stores information into an array. 
+They are meant to only be used in conjuction with the above DataLogger functions,
+but could likely be used more generally. 
+
+Currently you should only be using the DataLogger constructors to take advantage of 
+the choosy data logging platform.
 """
 struct ArrayLogger{V<:Union{Val, Nothing}} <: AbstractLogger
     data::Dict{Symbol, Dict{Symbol, AbstractArray}}
@@ -179,15 +229,13 @@ function Logging.handle_message(logger::ArrayLogger, level, message, _module, gr
             insert_data_strg!(logger.proc, data_strg, v, kwargs[:idx])
         end
     end
-    
 end
 
-Logging.min_enabled_level(::ArrayLogger) = LogLevel(-93)
+Logging.min_enabled_level(::ArrayLogger) = DataLevel#LogLevel(-93)
 Logging.shouldlog(::ArrayLogger, ::Base.CoreLogging.LogLevel, args...) = true
 Logging.catch_exceptions(::ArrayLogger) = false
 
 create_new_strg(data::T, n::Nothing) where T = T[]
-# create_new_strg(data::AbstractVector{<:Number}, n::Int) = zeros(eltype(data), length(data), n) # create matrix to store all the data
 create_new_strg(data::AbstractArray{<:Number}, n::Int) = zeros(eltype(data), size(data)..., n) # create matrix to store all the data
 create_new_strg(data::AbstractArray, n::Int) = begin
     Array{eltype{data}}(undef, size(data)..., n)
@@ -212,9 +260,5 @@ create_new_strg(t::Union{Val, Nothing}, data, n) = create_new_strg(process_data(
 insert_data_strg!(t::Union{Val, Nothing}, strg, data, idx) = insert_data_strg!(strg, process_data(t, data), idx)
 
 process_data(t::Nothing, data) = data
-
-function __init__()
-    # @show Main.cdl_info_arr
-end
 
 end
