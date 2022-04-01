@@ -4,7 +4,7 @@ import LoggingExtras: EarlyFilteredLogger, ActiveFilteredLogger, AbstractLogger,
 import Logging: Logging, @logmsg, Info, handle_message, LogLevel, current_logger
 import MacroTools: @capture
 import Markdown: Markdown, @md_str
-# import Distributed
+using EllipsisNotation
 
 const DataLevel = LogLevel(-93)
 const SPECIAL_NAMES = [:idx]
