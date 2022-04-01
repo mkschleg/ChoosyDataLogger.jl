@@ -100,6 +100,9 @@ function format_data_groups_and_names(dnag)
         logs = dnag[grp]
         for l in keys(logs)
             s *= "\t\t" * string(l) * ": $(length(logs[l]))\n"
+            for ln in logs[l]
+                s *= "\t\t- " * relpath(string(ln.file)) * ":$(ln.line)\n"
+            end
         end
     end
 
