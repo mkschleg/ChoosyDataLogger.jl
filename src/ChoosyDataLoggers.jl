@@ -14,27 +14,13 @@ const ABUSIVE_ARR_NAME = :_cdl_info_arr_1938123
 
 function proc_exs(group_sym, source, exs, __module__)
     @nospecialize
-    if group_sym ∉ keys(DataGroupsAndNames)
-        DataGroupsAndNames[group_sym] = Dict{String, LineNumberNode}()
-    end
-    NamesDict = get!(Dict{String, Vector{LineNumberNode}}, DataGroupsAndNames, group_sym)
     
     for ex in filter((ex)->!any([startswith(string(ex), string(k)) for k in SPECIAL_NAMES]), exs)
         if @capture(ex, name_=value_)
-            if name ∉ keys(NamesDict)
-                NamesDict[name] = [source]
-            elseif source ∉ NamesDict[name]
-                push!(NamesDict[name], source)
-            end
             if isdefined(__module__, ABUSIVE_ARR_NAME)
                 push!(getproperty(__module__, ABUSIVE_ARR_NAME), (group_sym, name, source))
             end
         elseif @capture(ex, name_) && !contains(string(name), "=") 
-            if name ∉ keys(NamesDict)
-                NamesDict[name] = [source]
-            elseif source ∉ NamesDict[name]
-                push!(NamesDict[name], source)
-            end
             if isdefined(__module__, ABUSIVE_ARR_NAME)
                 push!(getproperty(__module__, ABUSIVE_ARR_NAME), (group_sym, name, source))
             end
