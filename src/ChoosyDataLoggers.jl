@@ -193,7 +193,6 @@ function DataLogger(gnp::Vector, args...; kwargs...)
     if length(gnp) == 1
         DataLogger(Symbol(gnp[1]), args...; kwargs...)
     else
-        @info Tuple(convert_to_symbol_or_not(v) for v in gnp)
         DataLogger(Tuple(convert_to_symbol_or_not(v) for v in gnp), args...; kwargs...)
     end
     # elseif length(gnp) == 2
