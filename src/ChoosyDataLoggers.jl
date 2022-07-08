@@ -265,7 +265,7 @@ mutable struct CountArrayLogger{V<:Union{Val, Nothing}} <: AbstractLogger
     proc::V
 end
 
-CountArrayLogger(data; count_init, proc=nothing) = CountArrayLogger(data, 1, count_init, isnothing(proc) ? nothing : Val(proc))
+CountArrayLogger(data; count_init, proc=nothing, kwargs...) = CountArrayLogger(data, 1, count_init, isnothing(proc) ? nothing : Val(proc))
 
 function Logging.handle_message(logger::CountArrayLogger, level, message, _module, group, id, file, line; kwargs...)
     if logger.i != 1
