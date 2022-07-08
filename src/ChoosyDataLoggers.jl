@@ -138,20 +138,16 @@ end
 
 Convenience Functions for making data loggers using array loggers.
 """
-DataLogger(args...; kwargs...) = EarlyFilteredLogger(ArrayLogger(args...; kwargs...)) do log_args
-    log_args.level == DataLevel
-end
+# DataLogger(args...; kwargs...) = EarlyFilteredLogger(ArrayLogger(args...; kwargs...)) do log_args
+#     log_args.level == DataLevel
+# end
 
 DataLogger(group::Symbol, args...; kwargs...) = EarlyFilteredLogger(ArrayLogger(args...; kwargs...)) do log_args
     log_args.level == DataLevel && log_args.group == group
 end
 
-DataLogger((group, name)::Tuple{Symbol, Symbol}, args...; kwargs...) = EarlyFilteredLogger(
-    ActiveFilteredLogger(ArrayLogger(args...; kwargs...)) do log
-        name ∈ keys(log.kwargs)
-    end) do log_args
-        log_args.level == DataLevel && log_args.group == group
-    end
+DataLogger((group, name)::Tuple{Symbol, Symbol}, args...; kwargs...) =
+    DataLogger((group, name, :identity), args...; kwargs...)
 
 DataLogger((group, name, proc)::Tuple{Symbol, Symbol, Symbol}, args...; kwargs...) = EarlyFilteredLogger(
     ActiveFilteredLogger(ArrayLogger(args...; proc=proc, kwargs...)) do log
@@ -159,6 +155,26 @@ DataLogger((group, name, proc)::Tuple{Symbol, Symbol, Symbol}, args...; kwargs..
     end) do log_args
         log_args.level == DataLevel && log_args.group == group
     end
+
+
+DataLogger((group, count)::Tuple{Symbol, Int}, args...; kwargs...) = EarlyFilteredLogger(
+    ActiveFilteredLogger(CountArrayLogger(args...; count_init=count, proc=proc, kwargs...)) do log
+        name ∈ keys(log.kwargs)
+    end) do log_args
+        log_args.level == DataLevel && log_args.group == group
+    end
+
+DataLogger((group, name, count)::Tuple{Symbol, Symbol, Int}, args...; kwargs...) =
+    DataLogger((group, name, :identity, count), args...; kwargs...)
+
+DataLogger((group, name, proc, count)::Tuple{Symbol, Symbol, Symbol, Int}, args...; kwargs...) = EarlyFilteredLogger(
+    ActiveFilteredLogger(CountArrayLogger(args...; count_init=count, proc=proc, kwargs...)) do log
+        name ∈ keys(log.kwargs)
+    end) do log_args
+        log_args.level == DataLevel && log_args.group == group
+    end
+
+
 
 """
     DataLogger(group::String, args...; kwargs...)
@@ -169,16 +185,22 @@ Convencience for string arguments.
 """
 DataLogger(group::String, args...; kwargs...) = DataLogger(Symbol(group), args...; kwargs...)
 
-function DataLogger(gnp::Vector{<:AbstractString}, args...; kwargs...)
+convert_to_symbol_or_not(str::String) = Symbol(str)
+convert_to_symbol_or_not(i::Int) = i
+
+function DataLogger(gnp::Vector, args...; kwargs...)
+    @assert length(gnp) <= 4 "Logging extras can only have up-to 4 arguments"
     if length(gnp) == 1
         DataLogger(Symbol(gnp[1]), args...; kwargs...)
-    elseif length(gnp) == 2
-        DataLogger((Symbol(gnp[1]), Symbol(gnp[2])), args...; kwargs...)
-    elseif length(gnp) == 3
-        DataLogger((Symbol(gnp[1]), Symbol(gnp[2]), Symbol(gnp[3])), args...; kwargs...)
     else
-        @error "Logging extras can only have up-to 3 arguments"
+        @info Tuple(convert_to_symbol_or_not(v) for v in gnp)
+        DataLogger(Tuple(convert_to_symbol_or_not(v) for v in gnp), args...; kwargs...)
     end
+    # elseif length(gnp) == 2
+    #     DataLogger((Symbol(gnp[1]), Symbol(gnp[2])), args...; kwargs...)
+    # elseif length(gnp) == 3
+    #     DataLogger((Symbol(gnp[1]), Symbol(gnp[2]), Symbol(gnp[3])), args...; kwargs...)
+
 end
 
 DataLogger(gnp::Union{Tuple{String}, Tuple{String, String}, Tuple{String, String, String}}, args...; kwargs...) =
@@ -225,6 +247,46 @@ Logging.min_enabled_level(::ArrayLogger) = DataLevel#LogLevel(-93)
 Logging.shouldlog(::ArrayLogger, ::Base.CoreLogging.LogLevel, args...) = true
 Logging.catch_exceptions(::ArrayLogger) = false
 
+
+"""
+    CountArrayLogger
+
+This is a data sink logger which stores information into an array. 
+They are meant to only be used in conjuction with the above DataLogger functions,
+but could likely be used more generally. 
+
+Currently you should only be using the DataLogger constructors to take advantage of 
+the choosy data logging platform.
+"""
+mutable struct CountArrayLogger{V<:Union{Val, Nothing}} <: AbstractLogger
+    data::Dict{Symbol, Dict{Symbol, AbstractArray}}
+    i::Int
+    _count_init::Int
+    proc::V
+end
+
+CountArrayLogger(data; count_init, proc=nothing) = CountArrayLogger(data, 1, count_init, isnothing(proc) ? nothing : Val(proc))
+
+function Logging.handle_message(logger::CountArrayLogger, level, message, _module, group, id, file, line; kwargs...)
+    if logger.i != 1
+        logger.i -= 1
+        return
+    end
+    group_strg = get!(logger.data, group, Dict{Symbol, AbstractArray}())
+    for (k, v) in filter((kv)->kv.first!=:idx, kwargs)
+        data_strg = get!(group_strg, k) do
+            create_new_strg(logger.proc, v, nothing)
+        end
+        insert_data_strg!(logger.proc, data_strg, v, nothing)
+    end
+    logger.i = logger._count_init
+end
+
+Logging.min_enabled_level(::CountArrayLogger) = DataLevel
+Logging.shouldlog(logger::CountArrayLogger, ::Base.CoreLogging.LogLevel, args...) = true
+
+Logging.catch_exceptions(::CountArrayLogger) = false
+
 create_new_strg(data::T, n::Nothing) where T = T[]
 create_new_strg(data::AbstractArray{<:Number}, n::Int) = zeros(eltype(data), size(data)..., n) # create matrix to store all the data
 create_new_strg(data::AbstractArray, n::Int) = begin
@@ -250,5 +312,6 @@ create_new_strg(t::Union{Val, Nothing}, data, n) = create_new_strg(process_data(
 insert_data_strg!(t::Union{Val, Nothing}, strg, data, idx) = insert_data_strg!(strg, process_data(t, data), idx)
 
 process_data(t::Nothing, data) = data
+process_data(t::Val{:identity}, data) = data
 
 end
