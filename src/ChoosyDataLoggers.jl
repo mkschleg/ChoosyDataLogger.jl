@@ -195,11 +195,6 @@ function DataLogger(gnp::Vector, args...; kwargs...)
     else
         DataLogger(Tuple(convert_to_symbol_or_not(v) for v in gnp), args...; kwargs...)
     end
-    # elseif length(gnp) == 2
-    #     DataLogger((Symbol(gnp[1]), Symbol(gnp[2])), args...; kwargs...)
-    # elseif length(gnp) == 3
-    #     DataLogger((Symbol(gnp[1]), Symbol(gnp[2]), Symbol(gnp[3])), args...; kwargs...)
-
 end
 
 DataLogger(gnp::Union{Tuple{String}, Tuple{String, String}, Tuple{String, String, String}}, args...; kwargs...) =
